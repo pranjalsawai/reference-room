@@ -23,12 +23,14 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  // Redirect unauthenticated users to login (except on /login itself)
-  if (!user && !request.nextUrl.pathname.startsWith("/login")) {
+  const isAuthRoute = request.nextUrl.pathname.startsWith("/login") || request.nextUrl.pathname.startsWith("/auth");
+
+  // Redirect unauthenticated users to login (except on /login and /auth routes)
+  if (!user && !isAuthRoute) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // Redirect authenticated users away from login
+  // Redirect authenticated users away from login (but not from update-password)
   if (user && request.nextUrl.pathname.startsWith("/login")) {
     return NextResponse.redirect(new URL("/", request.url));
   }

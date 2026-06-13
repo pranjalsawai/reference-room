@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function LoginPage() {
@@ -8,6 +8,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // If Supabase redirected here with a recovery token, send to update-password
+    const hash = window.location.hash;
+    if (hash && hash.includes("type=recovery")) {
+      window.location.href = "/auth/update-password" + hash;
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
