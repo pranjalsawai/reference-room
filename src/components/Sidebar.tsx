@@ -9,9 +9,10 @@ interface SidebarProps {
   activeRoom: RoomId | "all" | "favorites";
   onRoomChange: (room: RoomId | "all" | "favorites") => void;
   resources: Resource[];
+  onSignOut: () => void;
 }
 
-export default function Sidebar({ activeRoom, onRoomChange, resources }: SidebarProps) {
+export default function Sidebar({ activeRoom, onRoomChange, resources, onSignOut }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   const countFor = (roomId: string) => resources.filter((r) => r.category === roomId).length;
@@ -118,15 +119,23 @@ export default function Sidebar({ activeRoom, onRoomChange, resources }: Sidebar
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-[#DDD9D0] mx-3 pt-3 pb-5">
+      <div className="border-t border-[#DDD9D0] mx-3 pt-3 pb-4">
         {!collapsed && (
-          <div className="px-1 space-y-0.5">
-            <p className="text-[9px] font-google-sans font-medium tracking-[0.12em] uppercase text-[#9B9690]">
-              Studio
-            </p>
-            <p className="text-[11px] font-google-sans text-[#6B6B6B] pt-0.5">Shared Library</p>
+          <div className="px-1 space-y-2">
+            <p className="text-[9px] font-google-sans font-medium tracking-[0.12em] uppercase text-[#9B9690]">Studio</p>
+            <p className="text-[11px] font-google-sans text-[#6B6B6B]">Shared Library</p>
           </div>
         )}
+        <button
+          onClick={onSignOut}
+          title="Sign out"
+          className={`mt-3 flex items-center gap-2 text-[#9B9690] hover:text-[#EF3054] transition-colors ${collapsed ? "justify-center w-full" : "px-1"}`}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+          </svg>
+          {!collapsed && <span className="text-[10px] font-google-sans">Sign out</span>}
+        </button>
       </div>
     </aside>
   );

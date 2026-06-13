@@ -1,18 +1,21 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { createClient } from "@/lib/supabase/client";
 import Sidebar from "@/components/Sidebar";
 import ResourceCard from "@/components/ResourceCard";
 import ResourceDetail from "@/components/ResourceDetail";
 import AddResourcePanel from "@/components/AddResourcePanel";
 import AddBar from "@/components/AddBar";
-import { MOCK_RESOURCES } from "@/lib/mock-data";
 import { ROOMS, ROOM_MAP } from "@/lib/constants";
 import type { RoomId } from "@/lib/constants";
 import type { Resource, SortOption } from "@/lib/types";
 
 export default function Home() {
-  const [resources, setResources] = useState<Resource[]>(MOCK_RESOURCES);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [userId, setUserId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [activeRoom, setActiveRoom] = useState<RoomId | "all" | "favorites">("all");
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -21,8 +24,39 @@ export default function Home() {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
 
+  const supabase = createClient();
+
+  // Load user + data
+  const loadData = useCallback(async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
+    setUserId(user.id);
+
+    const [{ data: resourceRows }, { data: favRows }] = await Promise.all([
+      supabase.from("resources").select("*").order("created_at", { ascending: false }),
+      supabase.from("favorites").select("resource_id").eq("user_id", user.id),
+    ]);
+
+    if (resourceRows) {
+      setResources(resourceRows.map((r) => ({
+        ...r,
+        tags: r.tags ?? [],
+        is_favorite: (favRows ?? []).some((f: { resource_id: string }) => f.resource_id === r.id),
+      })));
+    }
+    setFavorites(new Set((favRows ?? []).map((f: { resource_id: string }) => f.resource_id)));
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const resourcesWithFav = useMemo(
+    () => resources.map((r) => ({ ...r, is_favorite: favorites.has(r.id) })),
+    [resources, favorites]
+  );
+
   const filtered = useMemo(() => {
-    let list = [...resources];
+    let list = [...resourcesWithFav];
     if (activeRoom === "favorites") list = list.filter((r) => r.is_favorite);
     else if (activeRoom !== "all") list = list.filter((r) => r.category === activeRoom);
     if (search) {
@@ -38,31 +72,58 @@ export default function Home() {
     else if (sort === "oldest") list.sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
     else if (sort === "favorites") list.sort((a, b) => Number(b.is_favorite) - Number(a.is_favorite));
     return list;
-  }, [resources, activeRoom, search, sort]);
+  }, [resourcesWithFav, activeRoom, search, sort]);
 
   const recentResources = useMemo(
-    () => [...resources].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 4),
-    [resources]
+    () => [...resourcesWithFav].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 4),
+    [resourcesWithFav]
   );
 
-  const toggleFavorite = (id: string) => {
-    setResources((rs) => rs.map((r) => (r.id === id ? { ...r, is_favorite: !r.is_favorite } : r)));
-    if (selectedResource?.id === id) setSelectedResource((r) => r ? { ...r, is_favorite: !r.is_favorite } : null);
+  const toggleFavorite = async (id: string) => {
+    if (!userId) return;
+    const isFav = favorites.has(id);
+    setFavorites((prev) => {
+      const next = new Set(prev);
+      isFav ? next.delete(id) : next.add(id);
+      return next;
+    });
+    if (isFav) {
+      await supabase.from("favorites").delete().eq("user_id", userId).eq("resource_id", id);
+    } else {
+      await supabase.from("favorites").insert({ user_id: userId, resource_id: id });
+    }
   };
 
-  const handleSave = (data: Omit<Resource, "id" | "created_at" | "user_id">) => {
-    const newResource: Resource = {
-      ...data,
-      id: Math.random().toString(36).slice(2),
-      created_at: new Date().toISOString(),
-      user_id: "user_1",
-    };
-    setResources((rs) => [newResource, ...rs]);
+  const handleSave = async (data: Omit<Resource, "id" | "created_at" | "user_id">) => {
+    if (!userId) return;
+    const { data: inserted } = await supabase
+      .from("resources")
+      .insert({ ...data, created_by: userId })
+      .select()
+      .single();
+    if (inserted) setResources((rs) => [inserted, ...rs]);
   };
 
-  const handleUpdate = (updated: Resource) => {
-    setResources((rs) => rs.map((r) => (r.id === updated.id ? updated : r)));
-    if (selectedResource?.id === updated.id) setSelectedResource(updated);
+  const handleUpdate = async (updated: Resource) => {
+    const { data: result } = await supabase
+      .from("resources")
+      .update({
+        url: updated.url,
+        title: updated.title,
+        description: updated.description,
+        cover_image_url: updated.cover_image_url,
+        cover_image_override: updated.cover_image_override,
+        category: updated.category,
+        notes: updated.notes,
+        tags: updated.tags,
+      })
+      .eq("id", updated.id)
+      .select()
+      .single();
+    if (result) {
+      setResources((rs) => rs.map((r) => (r.id === result.id ? result : r)));
+      if (selectedResource?.id === result.id) setSelectedResource({ ...result, is_favorite: favorites.has(result.id) });
+    }
   };
 
   const openAdd = (url?: string) => {
@@ -76,6 +137,11 @@ export default function Home() {
     setEditResource(resource);
     setPrefillUrl(undefined);
     setAddOpen(true);
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
   };
 
   const roomCounts = useMemo(() => {
@@ -97,8 +163,13 @@ export default function Home() {
   const showHomepage = activeRoom === "all" && !search;
 
   return (
-    <div className="grain flex h-full overflow-hidden bg-[#F5F2EC]">
-      <Sidebar activeRoom={activeRoom} onRoomChange={setActiveRoom} resources={resources} />
+    <div className="flex h-full overflow-hidden bg-[#F5F2EC]">
+      <Sidebar
+        activeRoom={activeRoom}
+        onRoomChange={setActiveRoom}
+        resources={resourcesWithFav}
+        onSignOut={handleSignOut}
+      />
 
       <main className="flex-1 overflow-y-auto min-w-0" style={activeRoomColor ? { backgroundColor: activeRoomColor + "08" } : {}}>
         {/* Top bar */}
@@ -110,9 +181,7 @@ export default function Home() {
           }}
         >
           <div className="flex items-center gap-2.5">
-            {activeRoomColor && (
-              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeRoomColor }} />
-            )}
+            {activeRoomColor && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: activeRoomColor }} />}
             <h1 className="font-prata text-[16px] text-[#0D0D0D] whitespace-nowrap">{activeRoomLabel}</h1>
           </div>
           <div className="flex-1 max-w-xs ml-6">
@@ -129,7 +198,7 @@ export default function Home() {
               />
             </div>
           </div>
-          <div className="ml-auto flex items-center gap-3">
+          <div className="ml-auto">
             <select
               value={sort}
               onChange={(e) => setSort(e.target.value as SortOption)}
@@ -143,86 +212,93 @@ export default function Home() {
         </div>
 
         <div className="px-8 py-7 space-y-10">
-          {/* Add bar */}
           <AddBar onOpen={openAdd} />
 
-          {showHomepage && (
+          {loading ? (
+            <div className="flex items-center justify-center py-32">
+              <div className="w-5 h-5 border-2 border-[#DDD9D0] border-t-[#0D0D0D] rounded-full animate-spin" />
+            </div>
+          ) : (
             <>
-              {/* Recently Added */}
-              <section>
-                <div className="flex items-baseline justify-between mb-1">
-                  <h2 className="font-prata text-[15px] text-[#0D0D0D]">Recently Added</h2>
-                  <span className="text-[10px] font-google-sans text-[#9B9690] tracking-wide">{resources.length} references</span>
-                </div>
-                <div className="w-full h-px bg-[#DDD9D0] mb-4" />
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {recentResources.map((r) => (
-                    <ResourceCard key={r.id} resource={r} onFavoriteToggle={toggleFavorite} onClick={setSelectedResource} />
-                  ))}
-                </div>
-              </section>
-
-              {/* Rooms */}
-              <section>
-                <div className="flex items-baseline justify-between mb-1">
-                  <h2 className="font-prata text-[15px] text-[#0D0D0D]">Browse by Room</h2>
-                  <span className="text-[10px] font-google-sans text-[#9B9690] tracking-wide">{ROOMS.length} rooms</span>
-                </div>
-                <div className="w-full h-px bg-[#DDD9D0] mb-4" />
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-                  {ROOMS.map((room) => (
-                    <button
-                      key={room.id}
-                      onClick={() => setActiveRoom(room.id)}
-                      className="card-lift group text-left bg-white border border-[#E2DDD6] rounded-[2px] px-3.5 py-3 hover:border-[#0D0D0D]"
-                    >
-                      <div className="flex items-center gap-2 mb-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: room.color }} />
-                        <span className="text-[11.5px] font-prata text-[#0D0D0D] leading-tight">{room.label}</span>
-                      </div>
-                      <span className="text-[10px] font-google-sans text-[#9B9690] pl-3.5">
-                        {roomCounts[room.id] ?? 0} saved
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </section>
-            </>
-          )}
-
-          {/* Filtered / search grid */}
-          {!showHomepage && (
-            <section>
-              {filtered.length === 0 ? (
-                <div className="text-center py-32">
-                  <p className="font-prata text-[24px] text-[#DDD9D0]">—</p>
-                  <p className="font-prata text-[16px] text-[#6B6B6B] mt-3">Nothing here yet.</p>
-                  <p className="text-[12px] font-google-sans text-[#9B9690] mt-2">
-                    {activeRoom === "favorites"
-                      ? "Mark references as favorites to find them here."
-                      : search
-                      ? `No results for "${search}"`
-                      : "Add your first reference to this room."}
-                  </p>
-                </div>
-              ) : (
+              {showHomepage && (
                 <>
-                  <div className="flex items-baseline justify-between mb-1">
-                    <h2 className="font-prata text-[15px] text-[#0D0D0D]">{activeRoomLabel}</h2>
-                    <span className="text-[10px] font-google-sans text-[#9B9690] tracking-wide">{filtered.length} references</span>
-                  </div>
-                  <div
-                    className="w-full mb-4 transition-colors duration-300"
-                    style={{ height: activeRoomColor ? "2px" : "1px", backgroundColor: activeRoomColor ?? "#DDD9D0" }}
-                  />
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-                    {filtered.map((r) => (
-                      <ResourceCard key={r.id} resource={r} onFavoriteToggle={toggleFavorite} onClick={setSelectedResource} />
-                    ))}
-                  </div>
+                  <section>
+                    <div className="flex items-baseline justify-between mb-1">
+                      <h2 className="font-prata text-[15px] text-[#0D0D0D]">Recently Added</h2>
+                      <span className="text-[10px] font-google-sans text-[#9B9690] tracking-wide">{resources.length} references</span>
+                    </div>
+                    <div className="w-full h-px bg-[#DDD9D0] mb-4" />
+                    {recentResources.length === 0 ? (
+                      <p className="text-[13px] font-google-sans text-[#9B9690]">Nothing saved yet. Paste a URL above to start.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {recentResources.map((r) => (
+                          <ResourceCard key={r.id} resource={r} onFavoriteToggle={toggleFavorite} onClick={setSelectedResource} />
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section>
+                    <div className="flex items-baseline justify-between mb-1">
+                      <h2 className="font-prata text-[15px] text-[#0D0D0D]">Browse by Room</h2>
+                      <span className="text-[10px] font-google-sans text-[#9B9690] tracking-wide">{ROOMS.length} rooms</span>
+                    </div>
+                    <div className="w-full h-px bg-[#DDD9D0] mb-4" />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+                      {ROOMS.map((room) => (
+                        <button
+                          key={room.id}
+                          onClick={() => setActiveRoom(room.id)}
+                          className="card-lift group text-left bg-white border border-[#E2DDD6] rounded-[2px] px-3.5 py-3 hover:border-[#0D0D0D]"
+                        >
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: room.color }} />
+                            <span className="text-[11.5px] font-prata text-[#0D0D0D] leading-tight">{room.label}</span>
+                          </div>
+                          <span className="text-[10px] font-google-sans text-[#9B9690] pl-3.5">
+                            {roomCounts[room.id] ?? 0} saved
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </section>
                 </>
               )}
-            </section>
+
+              {!showHomepage && (
+                <section>
+                  {filtered.length === 0 ? (
+                    <div className="text-center py-32">
+                      <p className="font-prata text-[24px] text-[#DDD9D0]">—</p>
+                      <p className="font-prata text-[16px] text-[#6B6B6B] mt-3">Nothing here yet.</p>
+                      <p className="text-[12px] font-google-sans text-[#9B9690] mt-2">
+                        {activeRoom === "favorites"
+                          ? "Mark references as favorites to find them here."
+                          : search ? `No results for "${search}"`
+                          : "Add your first reference to this room."}
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex items-baseline justify-between mb-1">
+                        <h2 className="font-prata text-[15px] text-[#0D0D0D]">{activeRoomLabel}</h2>
+                        <span className="text-[10px] font-google-sans text-[#9B9690] tracking-wide">{filtered.length} references</span>
+                      </div>
+                      <div
+                        className="w-full mb-4 transition-colors duration-300"
+                        style={{ height: activeRoomColor ? "2px" : "1px", backgroundColor: activeRoomColor ?? "#DDD9D0" }}
+                      />
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
+                        {filtered.map((r) => (
+                          <ResourceCard key={r.id} resource={r} onFavoriteToggle={toggleFavorite} onClick={setSelectedResource} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </section>
+              )}
+            </>
           )}
         </div>
       </main>
