@@ -8,10 +8,11 @@ import type { Resource } from "@/lib/types";
 interface AddResourcePanelProps {
   open: boolean;
   onClose: () => void;
-  onSave: (resource: Omit<Resource, "id" | "created_at" | "user_id">) => void;
+  onSave: (resource: Omit<Resource, "id" | "created_at" | "created_by" | "workspace_id">) => void;
   prefillUrl?: string;
   editResource?: Resource | null;
   onUpdate?: (resource: Resource) => void;
+  contributorName?: string;
 }
 
 const EMPTY = {
@@ -24,6 +25,8 @@ const EMPTY = {
   is_favorite: false,
   notes: "",
   tags: [] as string[],
+  added_by_name: "",
+  contribution_note: "",
 };
 
 type CoverTab = "website" | "upload";
@@ -35,6 +38,7 @@ export default function AddResourcePanel({
   prefillUrl,
   editResource,
   onUpdate,
+  contributorName = "",
 }: AddResourcePanelProps) {
   const [form, setForm] = useState({ ...EMPTY });
   const [tagInput, setTagInput] = useState("");
@@ -59,13 +63,17 @@ export default function AddResourcePanel({
         is_favorite: editResource.is_favorite,
         notes: editResource.notes,
         tags: [...editResource.tags],
+        added_by_name: editResource.added_by_name ?? contributorName,
+        contribution_note: editResource.contribution_note ?? "",
       });
       setCoverTab(editResource.cover_image_override ? "upload" : "website");
     } else if (prefillUrl) {
-      setForm((f) => ({ ...f, url: prefillUrl }));
+      setForm((f) => ({ ...f, url: prefillUrl, added_by_name: contributorName }));
       fetchMeta(prefillUrl);
+    } else {
+      setForm((f) => ({ ...f, added_by_name: contributorName }));
     }
-  }, [open, prefillUrl, editResource]);
+  }, [open, prefillUrl, editResource, contributorName]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
@@ -207,6 +215,29 @@ export default function AddResourcePanel({
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
               className="form-input resize-none"
+            />
+          </div>
+
+          {/* Cover Image — two tabs */}
+          <div>
+            <label className="form-label">Why are you sharing this? <span className="normal-case tracking-normal font-normal">(optional)</span></label>
+            <textarea
+              placeholder="Add a little context for everyone…"
+              rows={3}
+              value={form.contribution_note}
+              onChange={(e) => setForm((f) => ({ ...f, contribution_note: e.target.value }))}
+              className="form-input resize-none"
+            />
+          </div>
+
+          <div>
+            <label className="form-label">Added by</label>
+            <input
+              type="text"
+              placeholder="Your name"
+              value={form.added_by_name}
+              onChange={(e) => setForm((f) => ({ ...f, added_by_name: e.target.value }))}
+              className="form-input"
             />
           </div>
 

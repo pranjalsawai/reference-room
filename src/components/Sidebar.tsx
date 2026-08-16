@@ -10,9 +10,10 @@ interface SidebarProps {
   onRoomChange: (room: RoomId | "all" | "favorites") => void;
   resources: Resource[];
   onSignOut: () => void;
+  canManage?: boolean;
 }
 
-export default function Sidebar({ activeRoom, onRoomChange, resources, onSignOut }: SidebarProps) {
+export default function Sidebar({ activeRoom, onRoomChange, resources, onSignOut, canManage = false }: SidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
 
   const countFor = (roomId: string) => resources.filter((r) => r.category === roomId).length;
@@ -124,6 +125,7 @@ export default function Sidebar({ activeRoom, onRoomChange, resources, onSignOut
           <div className="px-1 space-y-2">
             <p className="text-[9px] font-google-sans font-medium tracking-[0.12em] uppercase text-[#9B9690]">Studio</p>
             <p className="text-[11px] font-google-sans text-[#6B6B6B]">Shared Library</p>
+            {canManage && <a href="/manage-access" className="block text-[10px] font-google-sans text-[#6B6B6B] hover:text-[#0D0D0D]">Manage access</a>}
           </div>
         )}
         <button
