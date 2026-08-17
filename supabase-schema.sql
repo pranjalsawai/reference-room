@@ -73,6 +73,24 @@ end $$;
 
 alter table resources alter column workspace_id set not null;
 
+-- Backward compatibility for the current production UI while the new branch
+-- is being validated. New clients send workspace_id explicitly; old clients
+-- are assigned the signed-in user's first workspace before the insert.
+create or replace function assign_default_resource_workspace()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if new.workspace_id is null then
+    select workspace_id into new.workspace_id from workspace_members
+      where user_id = (select auth.uid()) order by created_at limit 1;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists resources_default_workspace on resources;
+create trigger resources_default_workspace before insert on resources
+  for each row execute function assign_default_resource_workspace();
+
 create or replace function is_workspace_member(target_workspace uuid)
 returns boolean language sql stable security definer set search_path = public as $$
   select exists (select 1 from workspace_members
