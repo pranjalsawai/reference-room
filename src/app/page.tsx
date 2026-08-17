@@ -9,7 +9,7 @@ import AddResourcePanel from "@/components/AddResourcePanel";
 import AddBar from "@/components/AddBar";
 import { ROOMS, ROOM_MAP } from "@/lib/constants";
 import type { RoomId } from "@/lib/constants";
-import type { Resource, SortOption } from "@/lib/types";
+import type { Resource, SortOption, WorkspaceAccess } from "@/lib/types";
 
 export default function Home() {
   const [resources, setResources] = useState<Resource[]>([]);
@@ -23,8 +23,9 @@ export default function Home() {
   const [editResource, setEditResource] = useState<Resource | null>(null);
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<SortOption>("newest");
+  const [access, setAccess] = useState<WorkspaceAccess | null>(null);
 
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   // Load user + data
   const loadData = useCallback(async () => {
@@ -32,8 +33,38 @@ export default function Home() {
     if (!user) return;
     setUserId(user.id);
 
+    const [{ data: membership }, { data: profile }] = await Promise.all([
+      supabase
+        .from("workspace_members")
+        .select("workspace_id, role, workspaces(name, kind)")
+        .eq("user_id", user.id)
+        .limit(1)
+        .maybeSingle(),
+      supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle(),
+    ]);
+
+    if (!membership) {
+      window.location.href = "/login?error=no-access";
+      return;
+    }
+
+    const workspace = Array.isArray(membership.workspaces)
+      ? membership.workspaces[0]
+      : membership.workspaces;
+    const savedContributorName = decodeURIComponent(
+      document.cookie.split("; ").find((item) => item.startsWith("reference-room-contributor-name="))?.split("=")[1] ?? ""
+    );
+    const currentAccess: WorkspaceAccess = {
+      workspaceId: membership.workspace_id,
+      workspaceName: workspace?.name ?? "The Reference Room",
+      workspaceKind: workspace?.kind === "personal" ? "personal" : "shared",
+      role: membership.role === "owner" ? "owner" : "contributor",
+      displayName: savedContributorName || profile?.display_name || user.user_metadata?.display_name || "",
+    };
+    setAccess(currentAccess);
+
     const [{ data: resourceRows }, { data: favRows }] = await Promise.all([
-      supabase.from("resources").select("*").order("created_at", { ascending: false }),
+      supabase.from("resources").select("*").eq("workspace_id", currentAccess.workspaceId).order("created_at", { ascending: false }),
       supabase.from("favorites").select("resource_id").eq("user_id", user.id),
     ]);
 
@@ -46,7 +77,7 @@ export default function Home() {
     }
     setFavorites(new Set((favRows ?? []).map((f: { resource_id: string }) => f.resource_id)));
     setLoading(false);
-  }, []);
+  }, [supabase]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
@@ -94,11 +125,11 @@ export default function Home() {
     }
   };
 
-  const handleSave = async (data: Omit<Resource, "id" | "created_at" | "user_id">) => {
-    if (!userId) return;
+  const handleSave = async (data: Omit<Resource, "id" | "created_at" | "created_by" | "workspace_id">) => {
+    if (!userId || !access) return;
     const { data: inserted } = await supabase
       .from("resources")
-      .insert({ ...data, created_by: userId })
+      .insert({ ...data, created_by: userId, workspace_id: access.workspaceId })
       .select()
       .single();
     if (inserted) setResources((rs) => [inserted, ...rs]);
@@ -116,6 +147,8 @@ export default function Home() {
         category: updated.category,
         notes: updated.notes,
         tags: updated.tags,
+        added_by_name: updated.added_by_name,
+        contribution_note: updated.contribution_note,
       })
       .eq("id", updated.id)
       .select()
@@ -169,6 +202,7 @@ export default function Home() {
         onRoomChange={setActiveRoom}
         resources={resourcesWithFav}
         onSignOut={handleSignOut}
+        canManage={access?.role === "owner" && access?.workspaceKind === "shared"}
       />
 
       <main className="flex-1 overflow-y-auto min-w-0" style={activeRoomColor ? { backgroundColor: activeRoomColor + "08" } : {}}>
@@ -320,6 +354,7 @@ export default function Home() {
         onClose={() => setSelectedResource(null)}
         onFavoriteToggle={toggleFavorite}
         onEdit={openEdit}
+        canEdit={access?.role === "owner"}
       />
       <AddResourcePanel
         open={addOpen}
@@ -328,6 +363,7 @@ export default function Home() {
         prefillUrl={prefillUrl}
         editResource={editResource}
         onUpdate={handleUpdate}
+        contributorName={access?.displayName}
       />
     </div>
   );

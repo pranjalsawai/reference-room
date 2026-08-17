@@ -1,4 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# The Reference Room
+
+An invitation-only visual library for collecting useful websites, branding,
+typography, motion, books, tools, portfolios, and other creative references.
+
+## Access model
+
+- Owners can view, add, edit, delete, and manage invitations.
+- Contributors can view the full shared library and add references, but cannot edit or delete.
+- Shared-password visitors use one dedicated contributor account and provide their name when entering.
+- Personal users join with a one-time invitation code and receive an isolated private workspace.
+
+Each submission can include the contributor's name and a short note explaining
+why they shared the reference.
+
+## Safe setup order
+
+1. Back up the Supabase database.
+2. Run `supabase-schema.sql` in the Supabase SQL editor. Existing resources are preserved.
+3. Create a dedicated Auth user such as `shared@reference-room.local` with the desired shared password.
+4. Find the shared workspace ID and the dedicated user's ID, then add that user to `workspace_members` with role `contributor` and add a matching `profiles` row.
+5. Add the variables from `.env.example` to Vercel. `SUPABASE_SERVICE_ROLE_KEY` must remain server-only.
+6. Deploy the feature branch to a Vercel preview and test every role before promoting it to production.
+
+The owner can use `/manage-access` to email a contributor invitation or generate
+a one-time code for a new personal room.
 
 ## Getting Started
 

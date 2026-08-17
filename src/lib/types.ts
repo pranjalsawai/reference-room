@@ -12,7 +12,21 @@ export interface Resource {
   notes: string;
   tags: string[];
   created_at: string;
-  user_id: string;
+  created_by?: string;
+  workspace_id?: string;
+  added_by_name?: string;
+  contribution_note?: string;
+  user_id?: string;
+}
+
+export type WorkspaceRole = "owner" | "contributor";
+
+export interface WorkspaceAccess {
+  workspaceId: string;
+  workspaceName: string;
+  workspaceKind: "shared" | "personal";
+  role: WorkspaceRole;
+  displayName: string;
 }
 
 export type SortOption = "newest" | "oldest" | "favorites";

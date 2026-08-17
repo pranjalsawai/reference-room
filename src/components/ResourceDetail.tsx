@@ -9,9 +9,10 @@ interface ResourceDetailProps {
   onClose: () => void;
   onFavoriteToggle: (id: string) => void;
   onEdit: (resource: Resource) => void;
+  canEdit: boolean;
 }
 
-export default function ResourceDetail({ resource, onClose, onFavoriteToggle, onEdit }: ResourceDetailProps) {
+export default function ResourceDetail({ resource, onClose, onFavoriteToggle, onEdit, canEdit }: ResourceDetailProps) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
@@ -47,7 +48,7 @@ export default function ResourceDetail({ resource, onClose, onFavoriteToggle, on
             {room?.label}
           </span>
           <div className="flex items-center gap-2">
-            <button
+            {canEdit && <button
               onClick={() => onEdit(resource)}
               className="w-8 h-8 flex items-center justify-center rounded-sm hover:bg-[#E2DDD6] transition-colors"
               title="Edit resource"
@@ -56,7 +57,7 @@ export default function ResourceDetail({ resource, onClose, onFavoriteToggle, on
                 <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
                 <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
               </svg>
-            </button>
+            </button>}
             <button
               onClick={() => onFavoriteToggle(resource.id)}
               className="w-8 h-8 flex items-center justify-center rounded-sm hover:bg-[#E2DDD6] transition-colors"
@@ -98,6 +99,21 @@ export default function ResourceDetail({ resource, onClose, onFavoriteToggle, on
             <p className="font-google-sans text-[13px] text-[#6B6B6B] leading-relaxed">
               {resource.description}
             </p>
+          )}
+
+          {(resource.added_by_name || resource.contribution_note) && (
+            <div className="border-l-2 border-[#724CF9] pl-3 py-0.5">
+              {resource.contribution_note && (
+                <p className="font-google-sans text-[13px] text-[#3D3A35] leading-relaxed italic">
+                  “{resource.contribution_note}”
+                </p>
+              )}
+              {resource.added_by_name && (
+                <p className="mt-1.5 text-[10px] font-google-sans text-[#9B9690] tracking-wide">
+                  Added by {resource.added_by_name}
+                </p>
+              )}
+            </div>
           )}
 
           {/* URL */}
