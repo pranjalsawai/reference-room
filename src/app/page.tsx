@@ -33,7 +33,7 @@ export default function Home() {
     if (!user) return;
     setUserId(user.id);
 
-    const [{ data: membership }, { data: profile }] = await Promise.all([
+    let [{ data: membership }, { data: profile }] = await Promise.all([
       supabase
         .from("workspace_members")
         .select("workspace_id, role, workspaces(name, kind)")
@@ -44,7 +44,23 @@ export default function Home() {
     ]);
 
     if (!membership) {
-      window.location.href = "/login?error=no-access";
+      const completion = await fetch("/api/auth/complete-invite", { method: "POST" });
+      if (completion.ok) {
+        const membershipResult = await supabase
+          .from("workspace_members")
+          .select("workspace_id, role, workspaces(name, kind)")
+          .eq("user_id", user.id)
+          .limit(1)
+          .maybeSingle();
+        membership = membershipResult.data;
+        const profileResult = await supabase.from("profiles").select("display_name").eq("id", user.id).maybeSingle();
+        profile = profileResult.data;
+      }
+    }
+
+    if (!membership) {
+      await supabase.auth.signOut();
+      window.location.replace("/login?error=no-access");
       return;
     }
 

@@ -14,7 +14,24 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (window.location.hash.includes("type=recovery")) window.location.href = "/auth/update-password" + window.location.hash;
+    const finishEmailLink = async () => {
+      const hash = window.location.hash;
+      if (hash.includes("type=recovery")) {
+        window.location.replace("/auth/update-password" + hash);
+        return;
+      }
+      if (hash.includes("access_token")) {
+        const params = new URLSearchParams(hash.slice(1));
+        const accessToken = params.get("access_token");
+        const refreshToken = params.get("refresh_token");
+        if (accessToken && refreshToken) {
+          await createClient().auth.setSession({ access_token: accessToken, refresh_token: refreshToken });
+          window.location.replace("/");
+          return;
+        }
+      }
+    };
+    finishEmailLink();
     const reason = new URLSearchParams(window.location.search).get("error");
     if (reason === "no-access") setError("This account does not have access to a Reference Room yet.");
     if (reason === "service-unavailable") setError("The library is waking up. Please try again in a moment.");
